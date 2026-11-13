@@ -30,6 +30,10 @@ using the search pattern `-Bug=security`.
 Issues of this kind include issues reported by Address Sanitizer, e.g.
 heap-based buffer overflows, stack-based buffer overflows and use-after-frees.
 
+### AI-proposed patches
+
+If a bug comes with an AI-proposed patch, you can have confidence that the patch passed internal quality control review, and that bug may require less time to fix. Consider this decreased cost in your prioritization methodology.
+
 ### Functional issues and memory leaks
 These are issues that in general can tamper with the functionality of the
 application. The bugs that have highest priority in this case are those that
@@ -47,7 +51,7 @@ model of your project.
 OSS-Fuzz will report some bugs that are labeled `Reliably reproduces: NO` and
 these can be tricky to deal with. A non-reproducible bug is an issue that
 OSS-Fuzz did indeed discover, however, OSS-Fuzz is unable to reproduce the bug
-with `python infra/helper.py reproduce`. In general, our suggestion is to do
+with `python3 infra/helper.py reproduce`. In general, our suggestion is to do
 analysis of the bug and determine whether there in fact is an issue.
 
 The non-reproducible bugs can be of varying nature. Some of these bugs will be

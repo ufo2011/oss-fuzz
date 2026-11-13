@@ -20,6 +20,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size);
 int
 LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
+  if (size > 16384)
+    return 0;
   char filename[256];
   sprintf(filename, "/tmp/libfuzzer.%d", getpid());
   FILE *fp = fopen(filename, "wb");
@@ -29,14 +31,25 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
   fwrite(data, size, 1, fp);
   fclose(fp);
 
-  bfd *file;
-  file = bfd_openr (filename, NULL);
-  if (file) {
-  char **matches;
-  if (bfd_check_format_matches (file, bfd_object, &matches)) {
-    load_separate_debug_files(file, bfd_get_filename(file));
+  bfd *file = bfd_openr (filename, NULL);
+  if (file)
+    {
+      if (bfd_check_format (file, bfd_object))
+	{
+	  if (bfd_big_endian (file))
+	    byte_get = byte_get_big_endian;
+	  else if (bfd_little_endian (file))
+	    byte_get = byte_get_little_endian;
+	  else
+	    byte_get = NULL;
+	  if (byte_get != NULL)
+	    {
+	      load_separate_debug_files (file, bfd_get_filename (file));
+	      free_debug_memory ();
+	    }
+	}
+      bfd_close_all_done (file);
     }
-  }
   unlink(filename);
   return 0;
 }

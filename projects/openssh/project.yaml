@@ -4,4 +4,13 @@ primary_contact: "djm@mindrot.org"
 auto_ccs:
         - "dtucker@dtucker.net"
         - "djm@google.com"
+        - "arthur.chan@adalogics.com"
+        - "david@adalogics.com"
+        - "adam@adalogics.com"
 main_repo: 'https://github.com/openssh/openssh-portable'
+
+fuzzing_engines:
+  - afl
+  - honggfuzz
+  - libfuzzer
+

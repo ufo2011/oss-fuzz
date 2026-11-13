@@ -11,7 +11,7 @@ limitations under the License.
 */
 
 /*
- * We convert dlltool.c into a header file to make convenient for fuzzing.
+ * We convert windres.c into a header file to make convenient for fuzzing.
  * We do this for several of the binutils applications when creating
  * the binutils fuzzers.
  */
@@ -51,27 +51,28 @@ fuzz_check_coff_rsrc (const char *filename, const char *target)
   bfd *abfd;
   windres_bfd wrbfd;
   asection *sec;
-  bfd_size_type size;
 
   abfd = bfd_openr (filename, target);
   if (abfd == NULL) {
     return 0;
   }
 
-  if (! bfd_check_format_matches (abfd, bfd_object, NULL)) {
+  if (! bfd_check_format (abfd, bfd_object)) {
 	  retval = 0;
 	  goto cleanup;
     }
 
   sec = bfd_get_section_by_name (abfd, ".rsrc");
-  if (sec == NULL) {
+  if (sec == NULL || sec->size == 0) {
 	  retval = 0;
 	  goto cleanup;
     }
 
   set_windres_bfd (&wrbfd, abfd, sec, WR_KIND_BFD);
-  size = bfd_section_size (sec);
-  if (size > (bfd_size_type) get_file_size (filename)) {
+
+  bfd_size_type filesize = get_file_size (filename);
+  if ((ufile_ptr) sec->filepos > filesize
+      || sec->size > filesize - sec->filepos) {
 	  retval = 0;
 	  goto cleanup;
   }
@@ -87,6 +88,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size);
 int
 LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
+  if (size > 16384)
+    return 0;
   enum res_format input_format;
    input_format = fuzz_format_check_from_mem(data, size);;
 	if (input_format != RES_FORMAT_COFF) {
@@ -109,7 +112,9 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
   // the two additional formats later.
   if (input_format == RES_FORMAT_COFF) {
 	  if (fuzz_check_coff_rsrc(filename, NULL) != 0) {
+		  res_init ();
 		  read_coff_rsrc (filename, NULL);
+		  obstack_free (&res_obstack, NULL);
 	  }
   }
 

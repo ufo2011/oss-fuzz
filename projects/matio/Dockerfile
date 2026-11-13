@@ -15,9 +15,14 @@
 ################################################################################
 
 FROM gcr.io/oss-fuzz-base/base-builder
-RUN apt-get update && apt-get install -y make autoconf automake libtool
-RUN git clone --depth 1 https://github.com/madler/zlib
-RUN git clone --depth 1 git://git.code.sf.net/p/matio/matio matio
-ADD https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-1.12/hdf5-1.12.1/src/hdf5-1.12.1.tar.gz hdf5-1.12.1.tar.gz
+RUN apt-get update && apt-get install -y make autoconf automake libtool-bin cmake git
+# Upgrade Git to support --revision flag (requires Git 2.49+)
+RUN apt-get update && apt-get install -y software-properties-common && \
+    add-apt-repository ppa:git-core/ppa && \
+    apt-get update && apt-get install -y --only-upgrade git
+RUN git clone --depth 1 https://github.com/madler/zlib.git zlib
+
+RUN git clone --depth 1 https://github.com/tbeu/matio.git matio
+RUN git clone --depth 1 --revision 49df1b4e5ca4108d56e80f06321a749da1535268 https://github.com/HDFGroup/hdf5.git hdf5
 WORKDIR matio
 COPY build.sh $SRC/

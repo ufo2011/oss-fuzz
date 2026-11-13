@@ -27,10 +27,14 @@ export PKG_CONFIG="`which pkg-config` --static"
 export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
 export PATH=$PREFIX/bin:$PATH
 pushd $SRC/freetype
-./autogen.sh
-./configure --prefix="$PREFIX" --disable-shared PKG_CONFIG_PATH="$PKG_CONFIG_PATH" --with-png=no --with-zlib=no 
-make -j$(nproc)
-make install
+# Temporarily Add -D_GNU_SOURCE to CFLAGS to fix freetype's dependence on GNU
+# extensions for dlsym to dynamically load harfbuzz. This feature
+# should potentially be disabled instead of fixing the compilation.
+# See https://github.com/google/oss-fuzz/pull/13325 for more details.
+CFLAGS="$CFLAGS -D_GNU_SOURCE" ./autogen.sh
+CFLAGS="$CFLAGS -D_GNU_SOURCE" ./configure --prefix="$PREFIX" --disable-shared PKG_CONFIG_PATH="$PKG_CONFIG_PATH" --with-png=no --with-zlib=no
+CFLAGS="$CFLAGS -D_GNU_SOURCE" make -j$(nproc)
+CFLAGS="$CFLAGS -D_GNU_SOURCE" make install
 popd
 
 # Make minor change in the CMakeFiles file.
@@ -46,7 +50,7 @@ cmake ../ -DCMAKE_C_FLAGS="$CFLAGS" -DCMAKE_CXX_FLAGS="$CXXFLAGS" \
 make
 
 # Build fuzzers
-for fuzzer in zxdoc pdfload; do
+for fuzzer in zxdoc pdfload JBIG2; do
     cp ../../fuzz_$fuzzer.cc .
     $CXX fuzz_$fuzzer.cc -o $OUT/fuzz_$fuzzer $CXXFLAGS $LIB_FUZZING_ENGINE \
       ./xpdf/libtestXpdfStatic.a ./fofi/libfofi.a ./goo/libgoo.a ./splash/libsplash.a ./xpdf/libtestXpdfWidgetStatic.a /work/prefix/lib/libfreetype.a \
@@ -54,4 +58,4 @@ for fuzzer in zxdoc pdfload; do
 done
 
 # Copy over options files
-cp $SRC/fuzz_pdfload.options $OUT/
+cp $SRC/fuzz_*.options $OUT/

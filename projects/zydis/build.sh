@@ -27,7 +27,8 @@ mkdir build && cd build
 cmake                                       \
     -DZYAN_FORCE_ASSERTS=ON                 \
     -DZYDIS_BUILD_EXAMPLES=OFF              \
-    -DZYDIS_BUILD_TOOLS=OFF                 \
+    -DZYDIS_BUILD_TOOLS=ON                  \
+    -DZYDIS_BUILD_TESTS=ON                  \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo       \
     "-DCMAKE_C_COMPILER=${CC}"              \
     "-DCMAKE_CXX_COMPILER=${CXX}"           \
@@ -48,15 +49,22 @@ function build_fuzzer() {
 
     $CC                                     \
         $CFLAGS                             \
-        "${LIB_FUZZING_ENGINE}"             \
+        -c                                  \
         "../tools/${source_file}"           \
         ../tools/ZydisFuzzShared.c          \
         -DZYDIS_LIBFUZZER                   \
-        -o "${OUT}/${executable}"           \
         -I .                                \
         -I ./zycore                         \
         -I ../include                       \
-        -I ../dependencies/zycore/include   \
+        -I ../dependencies/zycore/include
+
+     $CXX                                   \
+        $CXXFLAGS                           \
+        "${LIB_FUZZING_ENGINE}"             \
+        "$executable.o"                      \
+        ZydisFuzzShared.o                   \
+        -DZYDIS_LIBFUZZER                   \
+        -o "${OUT}/${executable}"           \
         ./libZydis.a
 
     echo -e "[libfuzzer]\nmax_len = ${max_len}" > "${OUT}/${executable}.options"

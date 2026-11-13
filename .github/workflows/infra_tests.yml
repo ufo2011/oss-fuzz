@@ -1,4 +1,8 @@
 name: Infra tests
+
+permissions:
+  contents: read
+
 on:
   pull_request:
     paths:
@@ -8,23 +12,29 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    permissions:
+      actions: write
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     steps:
-      - name: Cancel previous
-        uses: styfle/cancel-workflow-action@0.8.0
-        with:
-          access_token: ${{ github.token }}
-
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
         with:  # Needed for git diff to work. (get_changed_files)
           fetch-depth: 0
       - run: |
           git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/master
 
       - name: Setup python environment
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v6
         with:
-          python-version: 3.8
+          python-version: 3.11
+
+      # For gcloud emulators.
+      - name: Setup Java environment
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
 
       - name: Install dependencies
         run: |
@@ -33,9 +43,9 @@ jobs:
           sudo env "PATH=$PATH" pip install -r infra/build/functions/requirements.txt
           sudo env "PATH=$PATH" pip install -r infra/cifuzz/requirements.txt
 
-      - uses: google-github-actions/setup-gcloud@master
+      - uses: google-github-actions/setup-gcloud@v3
         with:
-          version: '298.0.0'
+          version: '523.0.0'
       - run: |
           sudo env "PATH=$PATH" gcloud components install beta cloud-datastore-emulator
 

@@ -64,7 +64,7 @@ by running the following commands:
 $ cd /path/to/oss-fuzz
 $ export PROJECT_NAME=<project_name>
 $ export LANGUAGE=<project_language>
-$ python infra/helper.py generate $PROJECT_NAME --language=$LANGUAGE
+$ python3 infra/helper.py generate $PROJECT_NAME --language=$LANGUAGE
 ```
 
 Once the template configuration files are created, you can modify them to fit your project.
@@ -85,6 +85,9 @@ This configuration file stores project metadata. The following attributes are su
 - [architectures](#architectures) (optional)
 - [help_url](#help_url) (optional)
 - [builds_per_day](#build_frequency) (optional)
+- [file_github_issue](#file_github_issue) (optional)
+- [disable_remediation](#disable_remediation) (optional)
+- [disable_remediation_pre_review](#disable_remediation_pre_review) (optional)
 
 ### homepage
 You project's homepage.
@@ -99,7 +102,9 @@ Programming language the project is written in. Values you can specify include:
 * [`rust`]({{ site.baseurl }}//getting-started/new-project-guide/rust-lang/)
 * [`python`]({{ site.baseurl }}//getting-started/new-project-guide/python-lang/)
 * [`jvm` (Java, Kotlin, Scala and other JVM-based languages)]({{ site.baseurl }}//getting-started/new-project-guide/jvm-lang/)
-* [`swift`]({{ site.baseurl }}//getting-started/new-project-guide/swift/)
+* [`swift`]({{ site.baseurl }}//getting-started/new-project-guide/swift-lang/)
+* [`javascript`]({{ site.baseurl }}//getting-started/new-project-guide/javascript-lang/)
+* [`lua`]({{ site.baseurl }}//getting-started/new-project-guide/lua-lang/)
 
 ### primary_contact, auto_ccs {#primary}
 The primary contact and list of other contacts to be CCed. Each person listed gets access to ClusterFuzz, including crash reports and fuzzer statistics, and are auto-cced on new bugs filed in the OSS-Fuzz
@@ -117,7 +122,8 @@ Any changes to this list must follow these rules:
 - An organization email address is used.
 
 ### sanitizers (optional) {#sanitizers}
-The list of sanitizers to use. If you don't specify a list, `sanitizers` uses a default list of supported
+The list of sanitizers to use. Possible values are: `address`, `memory` and `undefined`.
+If you don't specify a list, `sanitizers` uses a default list of supported
 sanitizers (currently ["address"](https://clang.llvm.org/docs/AddressSanitizer.html) and
 ["undefined"](https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html)).
 
@@ -173,9 +179,15 @@ On the testcase page of each oss-fuzz issue is a list of other jobs where the cr
 Fuzzing on i386 is not enabled by default because many projects won't build for i386 without some modification to their OSS-Fuzz build process.
 For example, you will need to link against `$LIB_FUZZING_ENGINE` and possibly install i386 dependencies within the x86_64 docker image ([for example](https://github.com/google/oss-fuzz/blob/5b8dcb5d942b3b8bc173b823fb9ddbdca7ec6c99/projects/gdal/build.sh#L18)) to get things working.
 
+There are [known bugs](https://github.com/google/oss-fuzz/issues/2746) in ASAN
+on i386 that cause ClusterFuzz to report unreproducible crashes for 0 length
+testcases. There are no plans to fix these bugs so be ready for slightly more
+false positives if you use i386. These false positives should be somewhat easy
+to identify since they will manifest as crashes in ASAN rather than your code.
+
 ### fuzzing_engines (optional) {#fuzzing_engines}
 The list of fuzzing engines to use.
-By default, `libfuzzer`, `afl`, and `honggfuzz` are used. It is recommended to
+By default, `libfuzzer`, `afl`, `honggfuzz`, and `centipede` are used. It is recommended to
 use all of them if possible. `libfuzzer` is required by OSS-Fuzz.
 
 ### help_url (optional) {#help_url}
@@ -195,6 +207,24 @@ builds_per_day: 2
 ```
 
 Will build the project twice per day.
+
+### file_github_issue (optional) {#file_github_issue}
+Whether to mirror issues on github instead of having them only in the OSS-Fuzz
+tracker.
+
+### disable_remediation (optional) {#disable_remediation}
+Opt out of receiving remediation for all new and existing bugs. If remediation
+is disabled, all disclosure notifications will not include any proposed code
+changes. If enabled (default), proposed code changes and comments to remediate
+bugs may be automatically included in disclosure that is private during the
+embargo of each issue on a case-by-case basis basis.
+
+### disable_remediation_pre_review (optional) {#disable_remediation_pre_review}
+Opt out of human-in-the-loop pre-review for proposed remediation code changes.
+If this is enabled, proposed code changes will be included in disclosure
+notifications without prior manual review by the OSS-Fuzz team. If disabled
+(default), all proposed remediation changes will be reviewed by a human before
+being shared.
 
 ## Dockerfile {#dockerfile}
 
@@ -223,6 +253,10 @@ You also need to setup environment variables needed by this toolchain, for examp
 For an example, see
 [ecc-diff-fuzzer/Dockerfile](https://github.com/google/oss-fuzz/blob/master/projects/ecc-diff-fuzzer/Dockerfile).
 where we use `base-builder-rust`and install golang
+
+Runtime dependencies of your project, such as third-party static libraries, will
+not be instrumented if you build them in the Dockerfile. In most cases, you will
+want to build them in `build.sh` instead.
 
 ## build.sh {#buildsh}
 
@@ -260,7 +294,7 @@ If your project is written in Go, check out the [Integrating a Go project]({{ si
 
 **Note:**
 
-1. Don't assume the fuzzing engine is libFuzzer by default, because we generate builds for libFuzzer, AFL++ and Honggfuzz fuzzing engine configurations. Instead, link the fuzzing engine using $LIB_FUZZING_ENGINE.
+1. Don't assume the fuzzing engine is libFuzzer by default, because we generate builds for libFuzzer, AFL++, Honggfuzz, and Centipede fuzzing engine configurations. Instead, link the fuzzing engine using $LIB_FUZZING_ENGINE.
 2. Make sure that the binary names for your [fuzz targets]({{ site.baseurl }}/reference/glossary/#fuzz-target) contain only
 alphanumeric characters, underscore(_) or dash(-). Otherwise, they won't run on our infrastructure.
 3. Don't remove source code files. They are needed for code coverage.
@@ -352,8 +386,8 @@ You can build your docker image and fuzz targets locally, so you can test them b
 
     ```bash
     $ cd /path/to/oss-fuzz
-    $ python infra/helper.py build_image $PROJECT_NAME
-    $ python infra/helper.py build_fuzzers --sanitizer <address/memory/undefined> $PROJECT_NAME
+    $ python3 infra/helper.py build_image $PROJECT_NAME
+    $ python3 infra/helper.py build_fuzzers --sanitizer <address/memory/undefined> $PROJECT_NAME
     ```
 
     The built binaries appear in the `/path/to/oss-fuzz/build/out/$PROJECT_NAME`
@@ -365,13 +399,13 @@ You can build your docker image and fuzz targets locally, so you can test them b
 2. Find failures to fix by running the `check_build` command:
 
     ```bash
-    $ python infra/helper.py check_build $PROJECT_NAME
+    $ python3 infra/helper.py check_build $PROJECT_NAME
     ```
 
 3. If you want to test changes against a particular fuzz target, run the following command:
 
     ```bash
-    $ python infra/helper.py run_fuzzer --corpus-dir=<path-to-temp-corpus-dir> $PROJECT_NAME <fuzz_target>
+    $ python3 infra/helper.py run_fuzzer --corpus-dir=<path-to-temp-corpus-dir> $PROJECT_NAME <fuzz_target>
     ```
 
 4. We recommend taking a look at your code coverage as a test to ensure that
@@ -379,11 +413,11 @@ your fuzz targets get to the code you expect. This would use the corpus
 generated from the previous `run_fuzzer` step in your local corpus directory.
 
     ```bash
-    $ python infra/helper.py build_fuzzers --sanitizer coverage $PROJECT_NAME
-    $ python infra/helper.py coverage $PROJECT_NAME --fuzz-target=<fuzz_target> --corpus-dir=<path-to-temp-corpus-dir>
+    $ python3 infra/helper.py build_fuzzers --sanitizer coverage $PROJECT_NAME
+    $ python3 infra/helper.py coverage $PROJECT_NAME --fuzz-target=<fuzz_target> --corpus-dir=<path-to-temp-corpus-dir>
     ```
 
-You may need to run `python infra/helper.py pull_images` to use the latest
+You may need to run `python3 infra/helper.py pull_images` to use the latest
 coverage tools. Please refer to
 [code coverage]({{ site.baseurl }}/advanced-topics/code-coverage/) for detailed
 information on code coverage generation.
@@ -430,7 +464,7 @@ OSS-Fuzz only: See also [Accessing Corpora]({{ site.baseurl }}/advanced-topics/c
 ### Dictionaries
 
 Dictionaries hugely improve fuzzing efficiency for inputs with lots of similar
-sequences of bytes. [libFuzzer documentation](http://libfuzzer.info#dictionaries)
+sequences of bytes. [libFuzzer documentation](https://llvm.org/docs/LibFuzzer.html#dictionaries)
 
 Put your dict file in `$OUT`. If the dict filename is the same as your target
 binary name (i.e. `%fuzz_target%.dict`), it will be automatically used. If the
@@ -444,7 +478,7 @@ dict = dictionary_name.dict
 
 It is common for several [fuzz targets]({{ site.baseurl }}/reference/glossary/#fuzz-target)
 to reuse the same dictionary if they are fuzzing very similar inputs.
-(example: [expat](https://github.com/google/oss-fuzz/blob/master/projects/expat/parse_fuzzer.options)).
+(example: [expat](https://github.com/google/oss-fuzz/blob/ad88a2e5295d91251d15f8a612758cd9e5ad92db/projects/expat/parse_fuzzer.options)).
 
 ### Input Size
 
@@ -518,3 +552,23 @@ Adding it is super easy, just follow this template:
 ```markdown
 [![Fuzzing Status](https://oss-fuzz-build-logs.storage.googleapis.com/badges/<project>.svg)](https://bugs.chromium.org/p/oss-fuzz/issues/list?sort=-opened&can=1&q=proj:<project>)
 ```
+
+## Monitoring performance via Fuzz Introspector
+
+As soon as your project is run with ClusterFuzz (< 1 day), you can view the Fuzz
+Introspector report for your project.
+[Fuzz Introspector](https://github.com/ossf/fuzz-introspector) helps you
+understand your fuzzers' performance and identify any potential blockers.
+It provides individual and aggregated fuzzer reachability and coverage reports.
+You can monitor each fuzzer's static reachability potential and compare it
+against dynamic coverage and identify any potential bottlenecks.
+Fuzz Introspector can offer suggestions on increasing coverage by adding new
+fuzz targets or modify existing ones.
+Fuzz Introspector reports can be viewed from the [OSS-Fuzz
+homepage](https://oss-fuzz.com/) or through this
+[index](http://oss-fuzz-introspector.storage.googleapis.com/index.html).
+Fuzz Introspector support C and C++ projects.
+Support for Java and Python projects is in the progress.
+
+You can view the [Fuzz Introspector report for bzip2](https://storage.googleapis.com/oss-fuzz-introspector/bzip2/inspector-report/20221017/fuzz_report.html)
+as an example.

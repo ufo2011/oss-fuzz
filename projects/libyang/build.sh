@@ -15,17 +15,27 @@
 #
 ################################################################################
 
-cd libyang
 git checkout devel
 
-sed -i 's/add_subdirectory/#add_subdirectory/g' ./tools/CMakeLists.txt
 mkdir build && cd build
-cmake ../ -DENABLE_STATIC=ON 
+cmake -DBUILD_SHARED_LIBS=OFF -DENABLE_TOOLS=OFF ..
 make
 
 static_pcre=($(find /src/pcre2 -name "libpcre2-8.a"))
 
-for fuzzer in lyd_parse_mem_json lyd_parse_mem_xml lys_parse_mem; do
-    $CC $CFLAGS $LIB_FUZZING_ENGINE ../tests/fuzz/${fuzzer}.c -o $OUT/${fuzzer} \
-        ./libyang.a -I../src -I./src -I./compat ${static_pcre} 
+for fuzzer in lys_parse_mem lyd_parse_mem_xml lyd_parse_mem_json lyd_parse_lyb lyd_parse_schema_mount_xml yang_parse_module; do
+  $CC $CFLAGS -c ../tests/fuzz/${fuzzer}.c -I./libyang -I./compat
+  $CXX $CXXFLAGS $LIB_FUZZING_ENGINE ${fuzzer}.o -o $OUT/${fuzzer} \
+    ./libyang.a ${static_pcre}
+
+  if [[ -d ../tests/fuzz/corpus/${fuzzer} ]]; then
+    find ../tests/fuzz/corpus/${fuzzer} -type f -exec \
+      zip -qj $OUT/${fuzzer}_seed_corpus.zip {} +
+  fi
 done
+
+# Build test
+mkdir $SRC/libyang/build-test
+cd $SRC/libyang/build-test
+cmake -DCMAKE_BUILD_TYPE=Debug ..
+make

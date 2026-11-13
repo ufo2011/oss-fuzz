@@ -15,6 +15,10 @@
 #
 ################################################################################
 
+# Inherit system packages to support Indexer building.
+python3 -m venv --system-site-packages $SRC/venv
+source $SRC/venv/bin/activate
+pip3 install pytest
 
 function copy_lib
     {
@@ -60,6 +64,7 @@ find $OUT -maxdepth 1 -type f -executable | while read i; do
     copy_lib ${i} libyang
     copy_lib ${i} libelf
     copy_lib ${i} libjson-c
+    copy_lib ${i} libprotobuf-c
 done
 
 patchelf --remove-needed libpcre2-8.so.0 $OUT/lib/libyang.so.2

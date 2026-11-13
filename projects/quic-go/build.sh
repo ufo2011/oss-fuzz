@@ -1,5 +1,6 @@
 #!/bin/bash
-# Copyright 2020 Google Inc.
+#
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,35 +16,6 @@
 #
 ################################################################################
 
-set -ex
+set -euo pipefail
 
-(
-cd qpack
-# Fuzz qpack
-compile_go_fuzzer github.com/marten-seemann/qpack/fuzzing Fuzz qpack_fuzzer
-)
-
-(
-cd quic-go
-# Fuzz quic-go
-compile_go_fuzzer github.com/lucas-clemente/quic-go/fuzzing/frames Fuzz frame_fuzzer
-compile_go_fuzzer github.com/lucas-clemente/quic-go/fuzzing/header Fuzz header_fuzzer
-compile_go_fuzzer github.com/lucas-clemente/quic-go/fuzzing/transportparameters Fuzz transportparameter_fuzzer
-compile_go_fuzzer github.com/lucas-clemente/quic-go/fuzzing/tokens Fuzz token_fuzzer
-compile_go_fuzzer github.com/lucas-clemente/quic-go/fuzzing/handshake Fuzz handshake_fuzzer
-
-if [ $SANITIZER == "coverage" ]; then
-    # no need for corpuses if coverage
-    exit 0
-fi
-# generate seed corpora
-go generate ./fuzzing/...
-
-zip --quiet -r $OUT/header_fuzzer_seed_corpus.zip fuzzing/header/corpus
-zip --quiet -r $OUT/frame_fuzzer_seed_corpus.zip fuzzing/frames/corpus
-zip --quiet -r $OUT/transportparameter_fuzzer_seed_corpus.zip fuzzing/transportparameters/corpus
-zip --quiet -r $OUT/handshake_fuzzer_seed_corpus.zip fuzzing/handshake/corpus
-)
-
-# for debugging
-ls -al $OUT
+exec bash "$GOPATH/src/github.com/quic-go/quic-go/oss-fuzz.sh" "$@"

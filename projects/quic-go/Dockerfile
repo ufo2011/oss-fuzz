@@ -16,12 +16,10 @@
 
 FROM gcr.io/oss-fuzz-base/base-builder-go
 
-RUN git clone --depth 1 https://github.com/marten-seemann/qpack/ && \
-  cd qpack && \
-  go build
+RUN go install github.com/AdamKorcz/go-118-fuzz-build@latest
 
-RUN git clone --depth 1 https://github.com/lucas-clemente/quic-go/ && \
-  cd quic-go && \
-  go build
+RUN git clone --depth 1 https://github.com/quic-go/qpack/ $GOPATH/src/github.com/quic-go/qpack
+RUN git clone --depth 1 https://github.com/quic-go/quic-go/ $GOPATH/src/github.com/quic-go/quic-go
 
-COPY build.sh .
+COPY build.sh $SRC/build.sh
+RUN chmod +x $SRC/build.sh

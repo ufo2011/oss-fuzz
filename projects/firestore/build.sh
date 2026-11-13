@@ -19,8 +19,8 @@ cd $WORK
 
 # Disable UBSan vptr since Firestore depends on other libraries that are built
 # with -fno-rtti.
-export CFLAGS="$CFLAGS -fno-sanitize=vptr"
-export CXXFLAGS="$CXXFLAGS -fno-sanitize=vptr"
+export CFLAGS="$CFLAGS -Wno-error=unknown-warning-option -fno-sanitize=vptr -Wno-error=missing-template-arg-list-after-template-kw -Wno-error=deprecated-builtins -Wno-error=deprecated-literal-operator"
+export CXXFLAGS="$CXXFLAGS -Wno-error=unknown-warning-option -fno-sanitize=vptr -Wno-error=missing-template-arg-list-after-template-kw -Wno-error=deprecated-builtins -Wno-error=deprecated-literal-operator"
 
 # Build the project using cmake with FUZZING option enabled to link to OSS Fuzz
 # fuzzing library defined in ${LIB_FUZZING_ENGINE}.
@@ -36,6 +36,23 @@ sed -i 's/-Werror//g' ./scripts/sync_project.rb
 sed -i 's/-Werror=reorder//g' ./FirebaseFirestore.podspec
 sed -i 's/ReadContext context/\/\/ReadContext/g' ./Firestore/fuzzing/serializer_fuzzer.cc
 sed -i 's/serializer.Dec/\/\/serializer/g' ./Firestore/fuzzing/serializer_fuzzer.cc
+
+# Explicitly instantiate util::AppendBytes<bool> so it has external linkage.
+# Without this, the symbol is implicitly instantiated with weak/COMDAT linkage
+# inside ordered_code.cc and gets discarded under some link configurations
+# (e.g. centipede engine with sanitizer=none), causing an undefined reference
+# from leveldb_index_manager.cc -> index_byte_encoder.h.
+cat >> ./Firestore/core/src/util/ordered_code.cc <<'EOF'
+
+namespace firebase {
+namespace firestore {
+namespace util {
+template void AppendBytes<true>(std::string*, const char*, size_t);
+template void AppendBytes<false>(std::string*, const char*, size_t);
+}  // namespace util
+}  // namespace firestore
+}  // namespace firebase
+EOF
 
 mkdir build && cd build
 cmake -DFIREBASE_IOS_BUILD_TESTS=OFF -DFIREBASE_IOS_BUILD_BENCHMARKS=OFF -DFUZZING=ON ..

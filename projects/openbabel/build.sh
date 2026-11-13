@@ -15,6 +15,8 @@
 #
 ################################################################################
 
+export CXXFLAGS="${CXXFLAGS} -std=c++17"
+sed -i 's/CMAKE_CXX_STANDARD 11/CMAKE_CXX_STANDARD 17/g' CMakeLists.txt
 
 # build project
 mkdir build && cd build

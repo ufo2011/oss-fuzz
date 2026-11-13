@@ -13,10 +13,12 @@
 # limitations under the License.
 #
 ################################################################################
+
+# Set BUILD_TESTING=ON for unit testing in run_tests.sh
 mkdir build && cd build
-cmake -DBUILD_TESTING=OFF ../
+cmake -DBUILD_TESTING=ON -DBUILD_BENCHMARK=OFF ../
 make
 
 # Compile fuzzers
-cp $SRC/fuzz* .
+cp $SRC/fuzz_* .
 $CXX $CXXFLAGS $LIB_FUZZING_ENGINE ./fuzz_cctz.cc ./libcctz.a  -I../include/ -o $OUT/fuzz_cctz

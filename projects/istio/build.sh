@@ -15,13 +15,27 @@
 #
 ################################################################################
 
+cd $SRC/go-118-fuzz-build
+go build
+mv go-118-fuzz-build $GOPATH/bin/go-118-fuzz-build_v2
+
+pushd cmd/convertLibFuzzerTestcaseToStdLibGo
+  go build . && mv convertLibFuzzerTestcaseToStdLibGo $GOPATH/bin/
+popd
+pushd cmd/addStdLibCorpusToFuzzer
+  go build . && mv addStdLibCorpusToFuzzer $GOPATH/bin/
+popd
+
+cd $SRC/istio
+
+cp $SRC/temp-istio/tests/fuzz/oss_fuzz_build.sh $SRC/istio/tests/fuzz/
+
+# Build fuzzers
 if [ -n "${OSS_FUZZ_CI-}" ]
 then
 	echo "Skipping most fuzzers since the OSS-fuzz CI may fail from running out of disk space."
-	mv ./tests/fuzz/kube_gateway_controller_fuzzer.go ./pilot/pkg/config/kube/gateway/
-	compile_go_fuzzer istio.io/istio/pilot/pkg/config/kube/gateway ConvertResourcesFuzz fuzz_convert_resources
+	compile_go_fuzzer istio.io/istio/tests/fuzz FuzzCRDRoundtrip fuzz_crd_roundtrip
 else
 	$SRC/istio/tests/fuzz/oss_fuzz_build.sh
 fi
-
 

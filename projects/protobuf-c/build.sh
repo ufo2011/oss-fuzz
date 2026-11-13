@@ -32,28 +32,23 @@ then
     export CXXFLAGS="$CXXFLAGS -fno-use-cxa-atexit"
 fi
 
-mkdir $SRC/protobuf-install/
-cd $SRC/protobuf/
-./autogen.sh
-./configure --prefix=$SRC/protobuf-install
-make -j$(nproc)
-make install
-
-export PROTOC="$SRC/protobuf-install/bin/protoc"
-
+# Avoid forcing -stdlib=libc++ during compilation to avoid clutter with
+# protobuf. We enable -stdlib=libc++ again once we link the fuzzer (to
+# staticaly compiled libs).
+OLD_CXXFLAGS="${CXXFLAGS}"
+export CXXFLAGS=`echo $CXXFLAGS | sed -e "s/-stdlib=libc++//g"`
 cd $SRC/protobuf-c/
 ./autogen.sh
-./configure --enable-static=yes --enable-shared=false PKG_CONFIG_PATH=$SRC/protobuf-install/lib/pkgconfig
+./configure --enable-static=yes --enable-shared=false
 
 make -j$(nproc)
 make install
 
-cd $SRC/fuzzing-headers/
-./install.sh
+# Generate C code from proto file
+cd $SRC/protobuf-c/
+protoc --c_out=. -I. -I/usr/local/include t/test-full.proto
 
-cd $SRC/protobuf-c-fuzzers/
-cp $SRC/protobuf-c/t/test-full.proto $SRC/protobuf-c-fuzzers/
-export PATH=$PATH:$SRC/protobuf-c/protoc-c
-$PROTOC --c_out=. -I. -I/usr/local/include test-full.proto
-$CC $CFLAGS test-full.pb-c.c -I $SRC/protobuf-install -I $SRC/protobuf-c -c -o test-full.pb-c.o
-$CXX $CXXFLAGS fuzzer.cpp -I $SRC/protobuf-install -I $SRC/protobuf-c test-full.pb-c.o $SRC/protobuf-c/protobuf-c/.libs/libprotobuf-c.a $LIB_FUZZING_ENGINE -o $OUT/fuzzer
+# Build the unpack fuzzer
+$CC $CFLAGS -I. -I/usr/local/include -c t/test-full.pb-c.c -o test-full.pb-c.o
+$CC $CFLAGS -I. -I/usr/local/include $SRC/unpack_fuzzer.c test-full.pb-c.o \
+    protobuf-c/.libs/libprotobuf-c.a $LIB_FUZZING_ENGINE -o $OUT/unpack_fuzzer

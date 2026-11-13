@@ -16,15 +16,18 @@
 ################################################################################
 
 # Move seed corpus and dictionary.
-mv $SRC/{*.zip,*.dict} $OUT
+mv $SRC/{*.zip,*.dict,*.options} $OUT
 
-MAVEN_ARGS="-Dmaven.test.skip=true -Djavac.src.version=15 -Djavac.target.version=15"
-$MVN package org.apache.maven.plugins:maven-shade-plugin:3.2.4:shade $MAVEN_ARGS
-CURRENT_VERSION=$($MVN org.apache.maven.plugins:maven-help-plugin:3.2.0:evaluate \
+MAVEN_ARGS="-Dmaven.test.skip=true -Djavac.src.version=17 -Djavac.target.version=17"
+$MVN package org.apache.maven.plugins:maven-shade-plugin:3.6.1:shade $MAVEN_ARGS
+CURRENT_VERSION=$($MVN org.apache.maven.plugins:maven-help-plugin:3.5.1:evaluate \
  -Dexpression=project.version -q -DforceStdout)
 cp "target/jsoup-$CURRENT_VERSION.jar" $OUT/jsoup.jar
 
-ALL_JARS="jsoup.jar"
+# re2j into classpath
+cp "$SRC/re2j.jar" $OUT/re2j.jar
+
+ALL_JARS="jsoup.jar re2j.jar"
 
 # The classpath at build-time includes the project jars in $OUT as well as the
 # Jazzer API.
@@ -39,14 +42,19 @@ for fuzzer in $(find $SRC -name '*Fuzzer.java'); do
   cp $SRC/$fuzzer_basename.class $OUT/
 
   # Create an execution wrapper that executes Jazzer with the correct arguments.
-  echo "#!/bin/sh
+  echo "#!/bin/bash
 # LLVMFuzzerTestOneInput for fuzzer detection.
 this_dir=\$(dirname \"\$0\")
+if [[ \"\$@\" =~ (^| )-runs=[0-9]+($| ) ]]; then
+  mem_settings='-Xmx1900m:-Xss900k'
+else
+  mem_settings='-Xmx2048m:-Xss1024k'
+fi
 LD_LIBRARY_PATH=\"$JVM_LD_LIBRARY_PATH\":\$this_dir \
 \$this_dir/jazzer_driver --agent_path=\$this_dir/jazzer_agent_deploy.jar \
 --cp=$RUNTIME_CLASSPATH \
 --target_class=$fuzzer_basename \
---jvm_args=\"-Xmx2048m\" \
+--jvm_args=\"\$mem_settings\" \
 \$@" > $OUT/$fuzzer_basename
   chmod u+x $OUT/$fuzzer_basename
 done

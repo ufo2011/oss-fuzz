@@ -4,8 +4,11 @@ primary_contact: "security@filecoin.org"
 auto_ccs :
   - "Adam@adalogics.com"
   - "kubuxu@protocol.ai"
+  - "yolan@protocol.ai"
 language: go
 fuzzing_engines:
   - libfuzzer
 sanitizers:
   - address
+
+base_os_version: ubuntu-24-04

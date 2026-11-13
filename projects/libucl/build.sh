@@ -1,3 +1,5 @@
+#!/bin/bash -eux
+
 # Copyright 2021 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,12 +16,18 @@
 #
 ################################################################################
 
-cp $SRC/ucl_add_string_fuzzer.options $OUT/
-
-cd libucl 
-./autogen.sh && ./configure
+./autogen.sh --force && ./configure
 make
 
-$CC $CFLAGS $LIB_FUZZING_ENGINE tests/fuzzers/ucl_add_string_fuzzer.c \
-    -DHAVE_CONFIG_H -I./src -I./include src/.libs/libucl.a -I./ \
-    -o $OUT/ucl_add_string_fuzzer
+$CC $CFLAGS -c tests/fuzzers/ucl_add_string_fuzzer.c \
+  -DHAVE_CONFIG_H -I./src -I./include src/.libs/libucl.a -I./ \
+  -o $OUT/ucl_add_string_fuzzer.o
+
+$CXX $CXXFLAGS $LIB_FUZZING_ENGINE $OUT/ucl_add_string_fuzzer.o -DHAVE_CONFIG_H -I./src -I./include src/.libs/libucl.a -I. -o $OUT/ucl_add_string_fuzzer
+
+$CC $CFLAGS -c tests/fuzzers/ucl_msgpack_fuzzer.c \
+  -DHAVE_CONFIG_H -I./src -I./include -I./ \
+  -o $OUT/ucl_msgpack_fuzzer.o
+$CXX $CXXFLAGS $LIB_FUZZING_ENGINE $OUT/ucl_msgpack_fuzzer.o -DHAVE_CONFIG_H -I./src -I./include src/.libs/libucl.a -I. -o $OUT/ucl_msgpack_fuzzer
+
+cp $SRC/*.options $OUT/

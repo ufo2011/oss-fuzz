@@ -1,3 +1,4 @@
+base_os_version: ubuntu-24-04
 homepage: "https://github.com/google/http_pattern_matcher"
 main_repo: "https://github.com/google/http_pattern_matcher.git"
 language: c++
@@ -7,14 +8,9 @@ auto_ccs:
 - "taoxuy@google.com"
 - "qiwzhang@google.com"
 - "justinmp@google.com"
-
-fuzzing_engines:
-- libfuzzer
-- afl
-- honggfuzz
-
 sanitizers:
 - address
 - undefined
 # Disabled MSAN because of https://github.com/google/oss-fuzz/issues/6294
 # - memory
+file_github_issue: True

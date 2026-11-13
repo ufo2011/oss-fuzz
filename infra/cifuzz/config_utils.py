@@ -26,12 +26,14 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import platform_config
 import constants
+import re
+import subprocess
 
 SANITIZERS = ['address', 'memory', 'undefined', 'coverage']
+BASE_OS_VERSION_REGEX = re.compile(r'\s*base_os_version\s*:\s*([^\s]+)')
 
 # TODO(metzman): Set these on config objects so there's one source of truth.
 DEFAULT_ENGINE = 'libfuzzer'
-DEFAULT_ARCHITECTURE = 'x86_64'
 
 # This module deals a lot with env variables. Many of these will be set by users
 # and others beyond CIFuzz's control. Thus, you should be careful about using
@@ -43,6 +45,10 @@ DEFAULT_ARCHITECTURE = 'x86_64'
 
 def _get_sanitizer():
   return os.getenv('SANITIZER', constants.DEFAULT_SANITIZER).lower()
+
+
+def _get_architecture():
+  return os.getenv('ARCHITECTURE', constants.DEFAULT_ARCHITECTURE).lower()
 
 
 def _is_dry_run():
@@ -58,6 +64,12 @@ def _get_language():
   # implementing this. A lot of the complexity comes from our unittests not
   # setting a proper projet at this point.
   return os.getenv('LANGUAGE', constants.DEFAULT_LANGUAGE)
+
+
+def _get_extra_environment_variables():
+  """Gets extra environment variables specified by the user with
+  CFL_EXTRA_$NAME=$VALUE."""
+  return [key for key in os.environ if key.startswith('CFL_EXTRA_')]
 
 
 # pylint: disable=too-many-instance-attributes
@@ -106,6 +118,7 @@ class BaseConfig:
 
     self.dry_run = _is_dry_run()  # Check if failures should not be reported.
     self.sanitizer = _get_sanitizer()
+    self.architecture = _get_architecture()
     self.language = _get_language()
     self.low_disk_space = environment.get_bool('LOW_DISK_SPACE', False)
 
@@ -119,6 +132,10 @@ class BaseConfig:
     self.build_integration_path = (
         constants.DEFAULT_EXTERNAL_BUILD_INTEGRATION_PATH)
 
+    self.parallel_fuzzing = environment.get('PARALLEL_FUZZING', False)
+    self.extra_environment_variables = _get_extra_environment_variables()
+    self.output_sarif = environment.get_bool('OUTPUT_SARIF', False)
+
     # TODO(metzman): Fix tests to create valid configurations and get rid of
     # CIFUZZ_TEST here and in presubmit.py.
     if not os.getenv('CIFUZZ_TEST') and not self.validate():
@@ -128,6 +145,7 @@ class BaseConfig:
     """Returns False if the configuration is invalid."""
     # Do validation here so that unittests don't need to make a fully-valid
     # config.
+    # pylint: disable=too-many-return-statements
     if not self.workspace:
       logging.error('Must set WORKSPACE.')
       return False
@@ -135,6 +153,16 @@ class BaseConfig:
     if self.sanitizer not in SANITIZERS:
       logging.error('Invalid SANITIZER: %s. Must be one of: %s.',
                     self.sanitizer, SANITIZERS)
+      return False
+
+    if self.architecture not in constants.ARCHITECTURES:
+      logging.error('Invalid ARCHITECTURE: %s. Must be one of: %s.',
+                    self.architecture, constants.ARCHITECTURES)
+      return False
+
+    if self.architecture == 'i386' and self.sanitizer != 'address':
+      logging.error(
+          'ARCHITECTURE=i386 can be used with SANITIZER=address only.')
       return False
 
     if self.language not in constants.LANGUAGES:
@@ -170,6 +198,84 @@ class BaseConfig:
     """Returns True if this CIFuzz run (building fuzzers and running them) for
     generating a coverage report."""
     return self.sanitizer == 'coverage'
+
+  @property
+  def base_os_version(self):
+    """Returns the project's base OS version."""
+    if self.oss_fuzz_project_name:
+      # Internal/OSS-Fuzz project.
+      project_yaml_path = os.path.join('/opt/oss-fuzz/projects',
+                                       self.oss_fuzz_project_name,
+                                       'project.yaml')
+    else:
+      # External project.
+      project_src_path = self.project_src_path
+      if project_src_path is None:
+        logging.info('PROJECT_SRC_PATH not set. Using workspace: %s',
+                     self.workspace)
+        project_src_path = self.workspace
+
+      project_yaml_path = os.path.join(project_src_path,
+                                       self.build_integration_path,
+                                       'project.yaml')
+
+    try:
+      if not os.path.exists(project_yaml_path):
+        return 'legacy'
+
+      with open(project_yaml_path) as file_handle:
+        content = file_handle.read()
+        for line in content.splitlines():
+          match = BASE_OS_VERSION_REGEX.match(line)
+          if match:
+            return match.group(1).strip('\'"')
+    except Exception:  # pylint: disable=broad-except
+      logging.warning(
+          'Failed to read project.yaml at %s. Falling back to legacy.',
+          project_yaml_path)
+      return 'legacy'
+
+    return 'legacy'
+
+
+def pivot_to_ubuntu_24_04(image_suffix, script_path, check_result=True):
+  """Pivots execution to an Ubuntu 24.04 container if needed."""
+  with open('/etc/os-release') as file_handle:
+    if '24.04' not in file_handle.read():
+      logging.info(
+          'Base OS version is Ubuntu 24.04, but running in a different OS. Pivoting to Ubuntu 24.04 container.'
+      )
+      env = os.environ.copy()
+      # Ensure we don't loop indefinitely.
+      env['CIFUZZ_PIVOTED'] = '1'
+      command = [
+          'docker', 'run', '--rm', '--privileged', '--volumes-from',
+          os.environ.get('HOSTNAME', ''), '-e', 'CIFUZZ_PIVOTED=1'
+      ]
+      # Propagate environment variables.
+      for key, value in os.environ.items():
+        command.extend(['-e', f'{key}={value}'])
+
+      # Use the ubuntu-24-04 version of the image.
+      command.append('--entrypoint')
+      command.append('python3')
+      command.append(
+          f'gcr.io/oss-fuzz-base/clusterfuzzlite-{image_suffix}:ubuntu-24-04-v1'
+      )
+
+      # Run the same command.
+      command.append(script_path)
+
+      if check_result:
+        subprocess.check_call(command)
+        return 0
+      else:
+        try:
+          subprocess.check_call(command)
+        except subprocess.CalledProcessError as e:
+          return e.returncode
+        return 0
+  return None
 
 
 def _get_platform_config(cfl_platform):

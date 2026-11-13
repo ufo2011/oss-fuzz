@@ -14,7 +14,7 @@
 #
 ################################################################################
 
-FROM gcr.io/oss-fuzz-base/base-builder
+FROM gcr.io/oss-fuzz-base/base-builder:ubuntu-24-04
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
@@ -37,7 +37,8 @@ RUN apt-get update -y \
             protobuf-compiler-grpc \
             libprotobuf-dev \
             sudo \
-            tzdata
+            tzdata \
+            nasm
 
 RUN git clone -j 8 --recursive https://github.com/ClickHouse/ClickHouse $SRC/ClickHouse
 WORKDIR $SRC/ClickHouse

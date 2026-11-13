@@ -14,12 +14,9 @@
 #
 ################################################################################
 
-FROM gcr.io/oss-fuzz-base/base-builder
-RUN apt-get install -y software-properties-common make autoconf build-essential wget lzip libtool python
+FROM gcr.io/oss-fuzz-base/base-builder@sha256:19782f7fe8092843368894dbc471ce9b30dd6a2813946071a36e8b05f5b1e27e
+# ! Project pinned after a clang update and an afl link error. Log: https://oss-fuzz-gcb-logs.storage.googleapis.com/log-e701b6fa-f3a0-414e-ad6e-0223e6d42ebd.txt
+RUN apt-get update && apt-get install -y software-properties-common make autoconf build-essential wget lzip libtool
 RUN git clone --depth 1 https://git.lysator.liu.se/nettle/nettle
-RUN git clone --depth 1 https://github.com/randombit/botan.git
-RUN git clone --depth 1 https://github.com/guidovranken/cryptofuzz
-RUN git clone --depth 1 https://github.com/guidovranken/cryptofuzz-corpora
-RUN wget https://boostorg.jfrog.io/artifactory/main/release/1.74.0/source/boost_1_74_0.tar.bz2
-RUN wget https://gmplib.org/download/gmp/gmp-6.2.0.tar.lz
+COPY fuzz_*.c $SRC/
 COPY build.sh $SRC/

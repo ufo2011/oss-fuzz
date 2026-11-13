@@ -23,15 +23,13 @@ import requests
 
 DATASTORE_READY_INDICATOR = b'is now running'
 DATASTORE_EMULATOR_PORT = 8432
-EMULATOR_TIMEOUT = 20
+EMULATOR_TIMEOUT = 30
 
 FUNCTIONS_DIR = os.path.dirname(__file__)
 OSS_FUZZ_DIR = os.path.dirname(os.path.dirname(os.path.dirname(FUNCTIONS_DIR)))
 PROJECTS_DIR = os.path.join(OSS_FUZZ_DIR, 'projects')
 
 FAKE_DATETIME = datetime.datetime(2020, 1, 1, 0, 0, 0)
-IMAGE_PROJECT = 'oss-fuzz'
-BASE_IMAGES_PROJECT = 'oss-fuzz-base'
 PROJECT = 'test-project'
 PROJECT_DIR = os.path.join(PROJECTS_DIR, PROJECT)
 
@@ -74,6 +72,8 @@ def wait_for_emulator_ready(proc,
                             timeout=EMULATOR_TIMEOUT):
   """Wait for emulator to be ready."""
 
+  emulator_output = []
+
   def _read_thread(proc, ready_event):
     """Thread to continuously read from the process stdout."""
     ready = False
@@ -81,6 +81,7 @@ def wait_for_emulator_ready(proc,
       line = proc.stdout.readline()
       if not line:
         break
+      emulator_output.append(line.decode())
       if not ready and indicator in line:
         ready = True
         ready_event.set()
@@ -91,7 +92,8 @@ def wait_for_emulator_ready(proc,
   thread.daemon = True
   thread.start()
   if not ready_event.wait(timeout):
-    raise RuntimeError(f'{emulator} emulator did not get ready in time.')
+    raise RuntimeError(f'{emulator} emulator did not get ready in time:\n' +
+                       '\n'.join(emulator_output))
   return thread
 
 

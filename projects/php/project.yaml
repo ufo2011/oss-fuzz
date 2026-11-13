@@ -5,6 +5,13 @@ auto_ccs:
  - "smalyshev@gmail.com"
  - "nikita.ppv@gmail.com"
  - "dmitrystogov@gmail.com"
+ - "tovilo.ilija@gmail.com"
+ - "github@derickrethans.nl"
+ - "jakub.php@gmail.com"
+fuzzing_engines:
+  - "afl"
+  - "honggfuzz"
+  - "libfuzzer"
 sanitizers:
  - address
  - undefined
@@ -14,3 +21,4 @@ architectures:
  - i386
 view_restrictions: none
 main_repo: 'https://github.com/php/php-src.git'
+base_os_version: ubuntu-24-04

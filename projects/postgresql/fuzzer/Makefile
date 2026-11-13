@@ -22,7 +22,7 @@ objfiles.txt: Makefile $(SUBDIROBJS) $(OBJS_FUZZERS)
 
 SUBDIRS = ../access ../bootstrap ../catalog ../parser ../commands ../executor ../foreign ../lib ../libpq \
 	../main ../nodes ../optimizer ../partitioning ../port ../postmaster \
-	../regex ../replication ../rewrite \
+	../regex ../replication ../rewrite ../backup \
 	../statistics ../storage ../tcop ../tsearch ../utils $(top_builddir)/src/timezone \
 	../jit
 
@@ -31,6 +31,7 @@ OBJS = \
 	$(SUBDIROBJS) \
 	$(top_builddir)/src/common/libpgcommon_srv.a \
 	$(top_builddir)/src/port/libpgport_srv.a \
+        $(top_builddir)/src/backend/libpostgres.a \
 
 OBJS_FUZZERS = $(filter-out ../main/objfiles.txt, $(OBJS))
 
@@ -41,19 +42,26 @@ fuzzer: simple_query_fuzzer \
 	protocol_fuzzer
 
 simple_query_fuzzer json_parser_fuzzer: %: %.o fuzzer_initialize.o $(OBJS_FUZZERS)
-	$(CXX) $(CFLAGS) $(call expand_subsys,$^) -o $@ $(LIB_FUZZING_ENGINE)
+	$(CXX) $(CFLAGS) $(call expand_subsys,$^) -o $@ -l:libicui18n.a -l:libicuuc.a -l:libicudata.a $(LIB_FUZZING_ENGINE) -lz -lpthread -ldl -lrt
 
 simple_query_fuzzer.o json_parser_fuzzer.o protocol_fuzzer.o fuzzer_initialize.o: %.o: %.c
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $^ 
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $^
 
 protocol_fuzzer: %: %.o $(OBJS_FUZZERS)
-	$(CXX) $(CFLAGS) $(call expand_subsys,$^) -o $@ $(LIB_FUZZING_ENGINE) -Wl,--wrap=exit -Wl,--wrap=pq_getbyte
+	$(CXX) $(CFLAGS) $(call expand_subsys,$^) -o $@ -l:libicui18n.a -l:libicuuc.a -l:libicudata.a $(LIB_FUZZING_ENGINE) -Wl,--wrap=exit -Wl,--wrap=pq_getbyte -lz -lpthread -ldl -lrt
+
+# submake-libpgport and temp-install both build src/port and src/common.  As
+# order-only prerequisites of dbfuzz they are otherwise free to run
+# concurrently under "make -j", and the two "ar crs libpgcommon_shlib.a"
+# invocations then race ("ar: unable to copy file ...: No such file or
+# directory").  Force submake-libpgport to complete first.
+temp-install: | submake-libpgport
 
 dbfuzz: dbfuzz.o | submake-libpgport temp-install
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@ \
 	&& PATH="$(abs_top_builddir)/tmp_install$(bindir):$$PATH" LD_LIBRARY_PATH="$(abs_top_builddir)/tmp_install/usr/local/pgsql/lib" ./dbfuzz
 
-dbfuzz.o: dbfuzz.c $(top_builddir)/src/port/pg_config_paths.h 
+dbfuzz.o: dbfuzz.c $(top_builddir)/src/port/pg_config_paths.h
 dbfuzz.o: override CPPFLAGS := $(CPPFLAGS) -I$(top_builddir)/src/port -I$(top_builddir)/../src/test/regress '-DSHELLPROG="$(SHELL)"'
 
 $(top_builddir)/src/port/pg_config_paths.h: | submake-libpgport

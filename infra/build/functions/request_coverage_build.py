@@ -21,20 +21,19 @@ from google.cloud import ndb
 
 import build_and_run_coverage
 import request_build
+import build_project
 
 BASE_PROJECT = 'oss-fuzz-base'
 
 
-def get_build_steps(project_name, image_project, base_images_project):
+def get_build_steps(project_name):
   """Retrieve build steps."""
-  build_config = request_build.get_empty_config()
-  project_yaml_contents, dockerfile_lines = request_build.get_project_data(
-      project_name)
-  return build_and_run_coverage.get_build_steps(project_name,
-                                                project_yaml_contents,
-                                                dockerfile_lines, image_project,
-                                                base_images_project,
-                                                build_config)
+  project_yaml, dockerfile_lines = request_build.get_project_data(project_name)
+  build_config = build_project.Config(
+      base_image_tag=project_yaml.get('base_os_version', None))
+
+  return build_and_run_coverage.get_build_steps(project_name, project_yaml,
+                                                dockerfile_lines, build_config)
 
 
 def request_coverage_build(event, context):
@@ -47,7 +46,7 @@ def request_coverage_build(event, context):
 
   with ndb.Client().context():
     credentials, cloud_project = google.auth.default()
-    build_steps = get_build_steps(project_name, cloud_project, BASE_PROJECT)
+    build_steps = get_build_steps(project_name)
     if not build_steps:
       return
     request_build.run_build(project_name,

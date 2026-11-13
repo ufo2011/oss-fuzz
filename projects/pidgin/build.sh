@@ -22,13 +22,15 @@ mkdir ${DEPS}
 
 # Build libffi
 cd $SRC
-tar xvfz libffi-3.2.1.tar.gz
-cd libffi-3.2.1
+cd libffi
+./autogen.sh
 ./configure --disable-shared
 make -j$(nproc)
-export LIBFFI_LIBS="-L/src/libffi-3.2.1 libraries/ -lffi"
-cp ./x86_64-unknown-linux-gnu/.libs/libffi.a ${DEPS}/
+export LIBFFI_LIBS="-L/src/libffi libraries/ -lffi"
+cp ./x86_64-pc-linux-gnu/.libs/libffi.a ${DEPS}/
 
+curl -LO http://mirrors.kernel.org/ubuntu/pool/main/a/automake-1.16/automake_1.16.5-1.3_all.deb && \
+apt install ./automake_1.16.5-1.3_all.deb
 
 # Build libxml2
 cd $SRC/libxml2
@@ -63,8 +65,8 @@ cp ${GLIB_BUILD}/glib/libglib-2.0.a ${DEPS}/
 
 # Build Pidgin
 cd $SRC 
-tar -xf pidgin-2.14.5.tar.bz2
-mv pidgin-2.14.5 pidgin
+tar -xf pidgin-2.14.10.tar.bz2
+mv pidgin-2.14.10 pidgin
 cd pidgin
 ./configure --disable-consoleui \
             --disable-shared \
@@ -106,8 +108,8 @@ for fuzzer in "${FUZZERS[@]}"; do
     -I${GLIB_BUILD} \
     -I${GLIB_BUILD}/glib \
     -I/usr/lib/x86_64-linux-gnu/glib-2.0/include \
+    -I/usr/local/include/libxml2  \
     -I/src/pidgin/libpurple/protocols/jabber \
-    -I/usr/local/include/libxml2 \
     -c $fuzzer.c \
     -o $fuzzer.o
 
@@ -115,12 +117,12 @@ for fuzzer in "${FUZZERS[@]}"; do
     -o $OUT/$fuzzer \
     /src/pidgin/libpurple/protocols/jabber/.libs/libjabber.a \
     ./.libs/libpurple.a \
-    ${DEPS}/libxml2.a \
     ${DEPS}/libgobject-2.0.a \
     ${DEPS}/libgmodule-2.0.a \
     ${DEPS}/libglib-2.0.a \
+    ${DEPS}/libxml2.a \
     ${DEPS}/libffi.a \
-    -lresolv -lz -llzma
+    -lresolv -lz -llzma -l:libpcre2-8.a
 done
 
 zip $OUT/pidgin_xml_fuzzer_seed_corpus.zip $SRC/go-fuzz-corpus/xml/corpus/*

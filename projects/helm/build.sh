@@ -14,4 +14,9 @@
 # limitations under the License.
 #
 ################################################################################
+cd $SRC/go-118-fuzz-build
+  go build .
+  mv go-118-fuzz-build /root/go/bin/
+cd $SRC
+
 $SRC/cncf-fuzzing/projects/helm/build.sh

@@ -14,10 +14,16 @@
 #
 ################################################################################
 
-FROM gcr.io/oss-fuzz-base/base-builder
-RUN apt-get update && apt-get install -y make autoconf automake libtool ninja-build libglib2.0-dev \
-    libfdt-dev libpixman-1-dev zlib1g-dev patchelf wget \
-    libattr1 libattr1-dev libcap-ng-dev pkg-config
+FROM gcr.io/oss-fuzz-base/base-builder:ubuntu-24-04
+# QEMU's configure requires Python >= 3.12. The base image's own
+# /usr/local/bin/python3 is 3.11, so install the distro python3.12 (plus
+# venv, which configure uses to create QEMU's build venv) and point
+# configure at it via $PYTHON in build.sh.
+RUN apt-get update && apt-get install -y make autoconf automake libtool ninja-build  \
+    libfdt-dev libpixman-1-dev zlib1g-dev libslirp-dev patchelf wget \
+    libattr1 libattr1-dev libcap-ng-dev pkg-config libglib2.0-dev \
+    python3.12 python3.12-venv
+
 RUN git clone --depth 1 https://git.qemu.org/git/qemu.git qemu
 WORKDIR qemu
-COPY build.sh $SRC/
+COPY run_tests.sh build.sh replay_build.sh $SRC/

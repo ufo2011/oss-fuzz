@@ -15,11 +15,52 @@
 #
 ################################################################################
 
-cd gpac
-./configure --static-build --extra-cflags="${CFLAGS}" --extra-ldflags="${CFLAGS}"
-make
+MAKE_PARAM=""
 
-cp $SRC/testsuite/oss-fuzzers/fuzz_parse.c .
-$CC $CFLAGS $LIB_FUZZING_ENGINE fuzz_parse.c -o $OUT/fuzz_parse \
-    -I./include -I./ ./bin/gcc/libgpac_static.a \
-    -lm -lz -lpthread -DGPAC_HAVE_CONFIG_H 
+# force fwrapv to make signed overflows deterministic
+export CFLAGS="$CFLAGS -fwrapv"
+export CXXFLAGS="$CXXFLAGS -fwrapv"
+
+# avoid simple int overflows
+if [ "$SANITIZER" = undefined ]; then
+    export CFLAGS="$CFLAGS -fno-sanitize=unsigned-integer-overflow,signed-integer-overflow"
+    export CXXFLAGS="$CXXFLAGS -fno-sanitize=unsigned-integer-overflow,signed-integer-overflow"
+fi
+
+
+# # for debugging and reproducing do asan+ubsan
+# if [ "$SANITIZER" = "address" ]; then
+#     export CFLAGS="$CFLAGS -fsanitize=undefined -fno-sanitize-recover=undefined"
+#     export CXXFLAGS="$CXXFLAGS -fsanitize=undefined -fno-sanitize-recover=undefined"
+# fi
+# MAKE_PARAM="-j"
+
+
+
+./configure --static-build --extra-cflags="${CFLAGS}" --extra-ldflags="${CFLAGS}"
+make $MAKE_PARAM
+
+
+fuzzers=$(find $SRC/gpac/testsuite/oss-fuzzers -name "fuzz_*.c")
+for f in $fuzzers; do
+
+    fuzzerName=$(basename $f .c)
+    echo "Building fuzzer $fuzzerName"
+
+    $CC $CFLAGS -I./include -I./ -DGPAC_HAVE_CONFIG_H -c $f
+    $CXX $CXXFLAGS $LIB_FUZZING_ENGINE $fuzzerName.o -o $OUT/$fuzzerName \
+      ./bin/gcc/libgpac_static.a \
+      -lm -lz -lpthread -lssl -lcrypto -DGPAC_HAVE_CONFIG_H
+
+
+    if [ -d "$SRC/gpac/testsuite/oss-fuzzers/${fuzzerName}_corpus" ]; then
+        zip -j $OUT/${fuzzerName}_seed_corpus.zip $SRC/gpac/testsuite/oss-fuzzers/${fuzzerName}_corpus/*
+    fi
+
+    if [ -f "$SRC/gpac/testsuite/oss-fuzzers/${fuzzerName}.dict" ]; then
+        cp $SRC/gpac/testsuite/oss-fuzzers/${fuzzerName}.dict $OUT/
+    fi
+    if [ -f "$SRC/gpac/testsuite/oss-fuzzers/${fuzzerName}.options" ]; then
+        cp $SRC/gpac/testsuite/oss-fuzzers/${fuzzerName}.options $OUT/
+    fi
+done

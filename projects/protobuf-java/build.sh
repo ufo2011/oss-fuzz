@@ -15,25 +15,23 @@
 #
 ################################################################################
 
-# Build protoc with default options.
+# Get the latest stable protobuf-java version from Maven Central
 unset CFLAGS CXXFLAGS
-mkdir $SRC/protobuf-install/
-cd $SRC/protobuf/
-./autogen.sh
-./configure --prefix=$SRC/protobuf-install
-make -j$(nproc)
-make install
+JAVA_VERSION=$(curl --silent "https://repo1.maven.org/maven2/com/google/protobuf/protobuf-java/maven-metadata.xml" \
+  | grep '<version>4\.' | grep -v RC | grep -v alpha | grep -v beta | tail -1 | sed 's/.*<version>//;s/<.*//' | tr -d '[:space:]')
+# Derive the protoc version from the Java version (strip the leading "4.")
+VERSION=${JAVA_VERSION#4.}
 
-export PROTOC="$SRC/protobuf-install/bin/protoc"
+mkdir -p $SRC/protobuf
+PROTOC_ZIP="protoc-$VERSION-linux-x86_64.zip"
+curl --silent --fail -L -o "$SRC/$PROTOC_ZIP" "https://github.com/protocolbuffers/protobuf/releases/download/v$VERSION/$PROTOC_ZIP"
+unzip -o $PROTOC_ZIP -d $SRC/protobuf
+export PROTOC=$SRC/protobuf/bin/protoc
 
-# Build protobuf-java (requires protoc in source tree).
-cd $SRC/protobuf/java/
-cp $PROTOC $SRC/protobuf/src/
-MAVEN_ARGS="-Dmaven.test.skip=true -Djavac.src.version=15 -Djavac.target.version=15"
-$MVN package $MAVEN_ARGS
-CURRENT_VERSION=$($MVN org.apache.maven.plugins:maven-help-plugin:3.2.0:evaluate \
- -Dexpression=project.version -q -DforceStdout)
-cp "core/target/protobuf-java-$CURRENT_VERSION.jar" $OUT/protobuf-java.jar
+# Download matching protobuf-java jar
+JAR_FILE="protobuf-java-$JAVA_VERSION.jar"
+curl --silent --fail -L -o "$SRC/$JAR_FILE" "https://repo1.maven.org/maven2/com/google/protobuf/protobuf-java/$JAVA_VERSION/$JAR_FILE"
+cp "$SRC/$JAR_FILE" $OUT/protobuf-java.jar
 
 # Compile test protos with protoc.
 cd $SRC/
@@ -55,14 +53,19 @@ for fuzzer in $(find $SRC -name '*Fuzzer.java'); do
   cp $SRC/$fuzzer_basename.class $OUT/
 
   # Create an execution wrapper that executes Jazzer with the correct arguments.
-  echo "#!/bin/sh
+  echo "#!/bin/bash
 # LLVMFuzzerTestOneInput for fuzzer detection.
 this_dir=\$(dirname \"\$0\")
+if [[ \"\$@\" =~ (^| )-runs=[0-9]+($| ) ]]; then
+  mem_settings='-Xmx1900m:-Xss900k'
+else
+  mem_settings='-Xmx2048m:-Xss1024k'
+fi
 LD_LIBRARY_PATH=\"$JVM_LD_LIBRARY_PATH\" \
 \$this_dir/jazzer_driver --agent_path=\$this_dir/jazzer_agent_deploy.jar \
 --cp=$RUNTIME_CLASSPATH \
 --target_class=$fuzzer_basename \
---jvm_args=\"-Xmx2048m\" \
+--jvm_args=\"\$mem_settings\" \
 \$@" > $OUT/$fuzzer_basename
   chmod +x $OUT/$fuzzer_basename
 done

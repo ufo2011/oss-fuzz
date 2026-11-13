@@ -15,30 +15,20 @@
 #
 ################################################################################
 
-# build ICU for linking statically.
-cd $SRC/icu/source
-./configure --disable-shared --enable-static --disable-layoutex \
-  --disable-tests --disable-samples --with-data-packaging=static
-make install -j$(nproc)
+# Clean up potentially persistent build directory.
+[[ -e $SRC/tarantool/build ]] && rm -rf $SRC/tarantool/build
 
-# Ugly ugly hack to get static linking to work for icu.
-cd lib
-ls *.a | xargs -n1 ar x
-rm *.a
-ar r libicu.a *.{ao,o}
-ln -s $PWD/libicu.a /usr/lib/x86_64-linux-gnu/libicudata.a
-ln -s $PWD/libicu.a /usr/lib/x86_64-linux-gnu/libicuuc.a
-ln -s $PWD/libicu.a /usr/lib/x86_64-linux-gnu/libicui18n.a
-
-# remove dynamic libraries of libunwind to force static linking
-find / -name "libunwind*.so*" -exec rm {} \;
+# For fuzz-introspector, exclude all functions in the tests directory,
+# libprotobuf-mutator and protobuf source code.
+# See https://github.com/ossf/fuzz-introspector/blob/main/doc/Config.md#code-exclusion-from-the-report
+export FUZZ_INTROSPECTOR_CONFIG=$SRC/fuzz_introspector_exclusion.config
+cat > $FUZZ_INTROSPECTOR_CONFIG <<EOF
+FILES_TO_AVOID
+tarantool/build/test
+tarantool/build/icu-prefix
+EOF
 
 cd $SRC/tarantool
-
-# Avoid compilation issue due to some unused variables. They are in fact
-# not unused, but the compilers are complaining.
-sed -i 's/total = 0;/total = 0;(void)total;/g' ./src/lib/core/crash.c
-sed -i 's/n = 0;/n = 0;(void)n;/g' ./src/lib/core/sio.c
 
 case $SANITIZER in
   address) SANITIZERS_ARGS="-DENABLE_ASAN=ON" ;;
@@ -46,43 +36,135 @@ case $SANITIZER in
   *) SANITIZERS_ARGS="" ;;
 esac
 
+export LSAN_OPTIONS="verbosity=1:log_threads=1"
+
+# Workaround for a LeakSanitizer crashes,
+# see https://github.com/google/oss-fuzz/issues/11798.
+if [ "$ARCHITECTURE" = "aarch64" ]; then
+    export ASAN_OPTIONS=detect_leaks=0
+fi
+
 : ${LD:="${CXX}"}
 : ${LDFLAGS:="${CXXFLAGS}"}  # to make sure we link with sanitizer runtime
 
+FUZZER_ARGS=""
+if [[ "$FUZZING_ENGINE" == libfuzzer ]]; then
+  FUZZER_ARGS="-DENABLE_LIBFUZZER_STATIC_LINKAGE=ON"
+fi
+
 cmake_args=(
     # Specific to Tarantool
-    -DENABLE_BACKTRACE=OFF
+    # Tarantool executable binary is needed for running Lua tests,
+    # it should not have any dependencies.
+    -DBUILD_STATIC=ON
+    -DENABLE_BACKTRACE=ON
     -DENABLE_FUZZER=ON
     -DOSS_FUZZ=ON
+    -DLUA_USE_APICHECK=ON
+    -DLUA_USE_ASSERT=ON
+    -DLUAJIT_USE_SYSMALLOC=ON
+    -DLUAJIT_ENABLE_GC64=ON
     $SANITIZERS_ARGS
+    $FUZZER_ARGS
+
+    -DCMAKE_BUILD_TYPE=Debug
 
     # C compiler
     -DCMAKE_C_COMPILER="${CC}"
-    -DCMAKE_C_FLAGS="${CFLAGS}"
+    -DCMAKE_C_FLAGS="${CFLAGS} -Wno-error=unused-command-line-argument -fno-sanitize=unsigned-integer-overflow"
 
     # C++ compiler
     -DCMAKE_CXX_COMPILER="${CXX}"
-    -DCMAKE_CXX_FLAGS="${CXXFLAGS}"
+    -DCMAKE_CXX_FLAGS="${CXXFLAGS} -Wno-error=unused-command-line-argument -fno-sanitize=unsigned-integer-overflow"
 
     # Linker
     -DCMAKE_LINKER="${LD}"
     -DCMAKE_EXE_LINKER_FLAGS="${LDFLAGS}"
     -DCMAKE_MODULE_LINKER_FLAGS="${LDFLAGS}"
     -DCMAKE_SHARED_LINKER_FLAGS="${LDFLAGS}"
+
+    # Dependencies
+    -DENABLE_BUNDLED_ICU=ON
+    -DENABLE_BUNDLED_LIBUNWIND=ON
+    -DENABLE_BUNDLED_ZSTD=OFF
 )
+
+# To deal with a host filesystem from inside of container.
+git config --global --add safe.directory '*'
 
 # Build the project and fuzzers.
 [[ -e build ]] && rm -rf build
 cmake "${cmake_args[@]}" -S . -B build
-make -j$(nproc) VERBOSE=1 -C build fuzzers
+cmake --build build --target fuzzers --parallel --verbose
 
 # Archive and copy to $OUT seed corpus if the build succeeded.
-for f in $(ls build/test/fuzz/*_fuzzer);
+# Postfix `_fuzzer` is used in Tarantool, postfix `_test` is
+# used in additional tests [1].
+#
+# 1. https://github.com/ligurio/lunapark
+cp test/static/*.dict test/static/*.options $OUT/
+for f in $(find build/test/fuzz/ \( -name '*_fuzzer' -o -name '*_test' \) -type f);
 do
   name=$(basename $f);
-  module=$(echo $name | sed 's/_fuzzer//')
+  module=$(echo $name | sed 's/_fuzzer//' | sed 's/_test//' )
   corpus_dir="test/static/corpus/$module"
   echo "Copying for $module";
   cp $f $OUT/
-  [[ -e $corpus_dir ]] && zip -j $OUT/"$module"_fuzzer_seed_corpus.zip $corpus_dir/*
+  if [ -e "$corpus_dir" ]; then
+    zip --quiet -j $OUT/"$name"_seed_corpus.zip $corpus_dir/*
+  fi
 done
+
+# Finish execution if libFuzzer is not used, because luzer
+# is libFuzzer-based.
+if [[ "$FUZZING_ENGINE" != libfuzzer ]]; then
+  exit
+fi
+
+# Tarantool binary is required for running luzer-based tests.
+# Beware, tarantool binary is linked with libFuzzer statically
+# when CMake options ENABLE_LIBFUZZER_STATIC_LINKAGE and
+# ENABLE_FUZZER are passed, the linkage can fail
+# when other fuzzing engine is used due to symbols conflict,
+# see FUZZING_ENGINE environment variable.
+cmake --build build --target tarantool --parallel --verbose
+
+LUA_RUNTIME_NAME=tarantool
+TARANTOOL_PATH=build/src/$LUA_RUNTIME_NAME
+LUA_MODULES_DIR=lua_modules
+
+apt install -y luarocks
+
+LUA_LIBRARIES=$(realpath build/third_party/luajit/src/libluajit.a)
+LUA_INCLUDE_DIR=$(realpath third_party/luajit/src)
+luarocks install --lua-version 5.1 --server=https://luarocks.org/dev --tree=$LUA_MODULES_DIR luzer LUA_LIBRARIES="$LUA_LIBRARIES" LUA_INCLUDE_DIR="$LUA_INCLUDE_DIR" OSS_FUZZ=ON ENABLE_LUAJIT=ON LUAJIT_FRIENDLY_MODE=ON
+
+# These Lua modules exists only when target `lua-tests` is used,
+# see cmake/BuildLuaTests.cmake.
+lua_lib_path="build/test/fuzz/lua-tests/src/tests/lapi/lib*.lua"
+if [ -f $lua_lib_path ]; then
+    cp $lua_lib_path $OUT
+fi
+LUZER_TEST_DIR="build/luzer_tests"
+# Copying luzer-based tests to a $LUZER_TEST_DIR.
+cmake --build build --parallel --verbose --target copy_tests
+# Generating test wrappers for luzer-based tests.
+for test_path in $(find $LUZER_TEST_DIR -name "*.lua" -type f);
+do
+  test_file=$(basename $test_path);
+  test_name_we="${test_file%.*}";
+  module_name=$(echo $test_name_we | sed 's/_test//' )
+  "$SRC/compile_lua_fuzzer" "$LUA_RUNTIME_NAME" $test_file
+  cp "$test_path" "$OUT/"
+  corpus_dir="test/static/corpus/$module_name"
+  if [ -e "$corpus_dir" ]; then
+    zip --quiet -j $OUT/"$test_name_we"_seed_corpus.zip $corpus_dir/*
+    echo "Build corpus '$OUT/"$test_name_we"_seed_corpus.zip' for the test '$test_name_we'"
+  fi
+done
+
+cp $TARANTOOL_PATH "$OUT/$LUA_RUNTIME_NAME"
+cp -R $LUA_MODULES_DIR "$OUT/"
+
+# Don't consider compile_lua_fuzzer as a test.
+rm -f "$OUT/compile_lua_fuzzer" "$SRC/compile_lua_fuzzer"

@@ -16,12 +16,12 @@
 ################################################################################
 
 # Not using OpenSSL
-    export CXXFLAGS="$CXXFLAGS -DCRYPTOFUZZ_NO_OPENSSL"
+    export CXXFLAGS="$CXXFLAGS -DCRYPTOFUZZ_NO_OPENSSL -Wno-deprecated-literal-operator"
 
 # Install Boost headers
     cd $SRC/
-    tar jxf boost_1_74_0.tar.bz2
-    cd boost_1_74_0/
+    tar jxf boost_1_84_0.tar.bz2
+    cd boost_1_84_0/
     CFLAGS="" CXXFLAGS="" ./bootstrap.sh
     CFLAGS="" CXXFLAGS="" ./b2 headers
     cp -R boost/ /usr/include/
@@ -57,7 +57,12 @@
     cd $SRC/botan
     if [[ $CFLAGS != *-m32* ]]
     then
-        ./configure.py --cc-bin=$CXX --cc-abi-flags="$CXXFLAGS" --disable-shared --disable-modules=locking_allocator --build-targets=static --without-documentation
+        if [[ $CFLAGS != *sanitize=memory* ]]
+        then
+            ./configure.py --cc-bin=$CXX --cc-abi-flags="$CXXFLAGS" --disable-shared --disable-modules=locking_allocator --build-targets=static --without-documentation
+        else
+            ./configure.py --disable-asm --cc-bin=$CXX --cc-abi-flags="$CXXFLAGS" --disable-shared --disable-modules=locking_allocator --build-targets=static --without-documentation
+        fi
     else
         ./configure.py --cpu=x86_32 --cc-bin=$CXX --cc-abi-flags="$CXXFLAGS" --disable-shared --disable-modules=locking_allocator --build-targets=static --without-documentation
     fi

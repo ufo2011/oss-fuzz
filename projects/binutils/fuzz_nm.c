@@ -16,12 +16,13 @@ limitations under the License.
  * the binutils fuzzers.
  */
 #include "fuzz_nm.h"
-#include "ada_nm.h"
 
 int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size);
 int
 LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
+  if (size > 16384)
+    return 0;
   char filename[256];
   sprintf(filename, "/tmp/libfuzzer.%d", getpid());
   FILE *fp = fopen(filename, "wb");
@@ -40,9 +41,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
 
   // Main fuzz entrypoint in nm.c
-  if (fuzz_preconditions(filename) == 1) {
-    display_file(filename);
-  }
+  display_file(filename);
 
   unlink(filename);
   return 0;

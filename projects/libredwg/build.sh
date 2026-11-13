@@ -15,13 +15,26 @@
 #
 ################################################################################
 
-cd libredwg
+# Harden build in introspector mode
+if [[ "$SANITIZER" == introspector ]]; then
+  export CFLAGS="${CFLAGS} -Wno-error"
+  export CXXFLAGS="${CXXFLAGS} -Wno-error"
+else
+  export CFLAGS="${CFLAGS} -Wno-default-const-init-field-unsafe -Wno-uninitialized-const-pointer"
+  export CXXFLAGS="${CXXFLAGS} -Wno-default-const-init-field-unsafe -Wno-uninitialized-const-pointer"
+fi
+
 sh ./autogen.sh
 # enable-release to skip unstable preR13. bindings are not fuzzed.
 ./configure --disable-shared --disable-bindings --enable-release
 make
 
-$CC $CFLAGS $LIB_FUZZING_ENGINE examples/llvmfuzz.c -o $OUT/llvmfuzz \
-    src/.libs/libredwg.a -I./include -I./src
+$CC $CFLAGS src/.libs/libredwg.a -I./include -I./src -c examples/llvmfuzz.c
+
+$CXX $CXXFLAGS $LIB_FUZZING_ENGINE llvmfuzz.o src/.libs/libredwg.a \
+  -o $OUT/llvmfuzz
 
 cp $SRC/llvmfuzz.options $OUT/llvmfuzz.options
+
+# Build unit test
+make check-prep -C test/unit-testing/ -j$(nproc)

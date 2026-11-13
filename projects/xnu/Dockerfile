@@ -33,5 +33,7 @@ RUN make -j $(nproc)
 RUN make install
 
 WORKDIR $SRC
-RUN git clone --depth 1 https://github.com/googleprojectzero/SockFuzzer.git
+RUN git clone https://github.com/googleprojectzero/SockFuzzer.git && \
+    cd SockFuzzer && \
+    git checkout 801269cfa703a82fbd788ff93afaac16d114e673
 COPY build.sh $SRC

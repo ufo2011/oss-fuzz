@@ -15,12 +15,12 @@
 ################################################################################
 
 FROM gcr.io/oss-fuzz-base/base-builder
-RUN apt-get update && apt-get install -y make autoconf automake libtool gettext pkg-config build-essential
+RUN apt-get update && apt-get install -y build-essential cmake gettext make
 RUN git clone --recurse-submodules https://github.com/google/leveldb.git
 
 WORKDIR $SRC/
 
 # Copy in our files
-COPY build.sh $SRC/
+COPY build.sh run_tests.sh $SRC/
 COPY *.cc $SRC/leveldb/
 COPY *.options $SRC/

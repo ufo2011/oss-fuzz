@@ -27,6 +27,12 @@ cd binutils-gdb
 cd binutils
 sed -i 's/vfprintf (stderr/\/\//' elfcomm.c
 sed -i 's/fprintf (stderr/\/\//' elfcomm.c
+
+# Fix a dlltool leak, which won't be fixed upstream because it uses a
+# non-posix yacc feature.  It also isn't seen as a direct leak when
+# running dlltool stand-alone.
+sed -i '/^%%$/i%destructor { free (\$\$); } ID' defparse.y
+
 cd ../
 
 ./configure --disable-gdb --disable-gdbserver --disable-gdbsupport \
@@ -34,7 +40,7 @@ cd ../
 	    --disable-libbacktrace --disable-gas --disable-ld --disable-werror \
       --enable-targets=all
 make clean
-make MAKEINFO=true && true
+make MAKEINFO=true -j$(nproc) && true
 
 
 # Make fuzzer directory
@@ -42,7 +48,7 @@ mkdir fuzz
 cp ../fuzz_*.c fuzz/
 cd fuzz
 
-LIBS="../opcodes/libopcodes.a ../libctf/.libs/libctf.a ../bfd/libbfd.a ../zlib/libz.a ../libiberty/libiberty.a"
+LIBS="../opcodes/libopcodes.a ../libctf/.libs/libctf.a ../bfd/.libs/libbfd.a ../zlib/libz.a ../libsframe/.libs/libsframe.a ../libiberty/libiberty.a"
 for i in fuzz_disassemble fuzz_bfd fuzz_bfd_ext; do
     $CC $CFLAGS -I ../include -I ../bfd -I ../opcodes -c $i.c -o $i.o
     $CXX $CXXFLAGS $i.o -o $OUT/$i $LIB_FUZZING_ENGINE -Wl,--start-group ${LIBS} -Wl,--end-group
@@ -68,9 +74,6 @@ cd ../binutils
 # The general strategy is to remove main functions such that the fuzzer (which has its own main)
 # can link against the code.
 
-# Copy over precondition files
-cp $SRC/binutils-preconditions/*.h .
-
 #
 # Patching
 #
@@ -83,7 +86,6 @@ sed 's/main (int argc/old_main (int argc, char **argv);\nint old_main (int argc/
 
 # Special handling of dlltool
 sed 's/main (int ac/old_main32 (int ac, char **av);\nint old_main32 (int ac/' dlltool.c > fuzz_dlltool.h
-sed -i 's/copy_mian/copy_main/g' fuzz_dlltool.h
 
 # Patch the rest
 for i in objdump nm objcopy windres strings addr2line; do
@@ -139,7 +141,7 @@ fl["objdump"]=${OBJ3}
 fl["objdump_safe"]=${OBJ3}
 fl["dwarf"]=${OBJ3}
 fl["addr2line"]=${OBJ1}
-fl["objcopy"]="is-strip.o rename.o rddbg.o debug.o stabs.o rdcoff.o wrstabs.o ${OBJ1}"
+fl["objcopy"]="rename.o rddbg.o debug.o stabs.o rdcoff.o wrstabs.o ${OBJ1}"
 fl["nm"]="${OBJ1} demanguse.o"
 fl["dlltool"]="defparse.o deflex.o ${OBJ1}"
 fl["windres"]="resrc.o rescoff.o resbin.o rcparse.o rclex.o winduni.o resres.o ${OBJ1}"
@@ -155,8 +157,8 @@ done
 if [ "$FUZZING_ENGINE" != "afl" ]
 then
   cd ../gas
-  ./configure
-  make
+  ./configure --enable-leak-check
+  make -j$(nproc)
   sed 's/main (int argc/old_main32 (int argc, char **argv);\nint old_main32 (int argc/' as.c > fuzz_as.h
   rm as.o || true
   ar r libar.a *.o
@@ -166,13 +168,32 @@ then
   $CXX $CXXFLAGS $LIB_FUZZING_ENGINE -I./../zlib -o $OUT/fuzz_as ./fuzz_as.o \
       libar.a config/tc-i386.o config/obj-elf.o config/atof-ieee.o  \
       ../opcodes/.libs/libopcodes.a ../bfd/.libs/libbfd.a \
-      -L/src/binutils-gdb/zlib ../libiberty/libiberty.a -lz
+      -L/src/binutils-gdb/zlib ../libsframe/.libs/libsframe.a ../libiberty/libiberty.a -lz
 fi
 
 # Copy seeds out
-for fuzzname in readelf_pef readelf_elf32_csky readelf_elf64_mmix readelf_elf32_littlearm readelf_elf32_bigarm objdump objdump_safe nm objcopy bdf windres addr2line dwarf; do
+for fuzzname in readelf_pef readelf_elf32_csky readelf_elf64_mmix readelf_elf32_littlearm readelf_elf32_bigarm objdump objdump_safe nm objcopy bfd windres addr2line dwarf; do
   cp $SRC/binary-samples/oss-fuzz-binutils/general_seeds.zip $OUT/fuzz_${fuzzname}_seed_corpus.zip
 done
+
+# Generate structured seeds (see generate_seeds.py) and append them to the
+# relevant corpora; existing seeds are retained.
+python3 $SRC/generate_seeds.py $SRC/generated_seeds
+
+# Object-file seeds -> object-consuming fuzzers.
+GEN_OBJ_SEEDS=$(find $SRC/generated_seeds/seeds/elf_reloc \
+    $SRC/generated_seeds/seeds/dwarf $SRC/generated_seeds/seeds/elf_meta \
+    $SRC/generated_seeds/seeds/archive -type f)
+for fuzzname in readelf readelf_pef readelf_elf32_csky readelf_elf64_mmix \
+    readelf_elf32_littlearm readelf_elf32_bigarm objdump objdump_safe nm \
+    objcopy bfd addr2line dwarf; do
+  zip -j $OUT/fuzz_${fuzzname}_seed_corpus.zip $GEN_OBJ_SEEDS
+done
+
+# Format-specific seeds for the otherwise-unseeded fuzz_as and fuzz_dlltool.
+zip -j $OUT/fuzz_as_seed_corpus.zip $SRC/generated_seeds/seeds/gas/seed.s
+zip -j $OUT/fuzz_dlltool_seed_corpus.zip \
+    $SRC/generated_seeds/seeds/dlltool/seed.def
 # Seed targeted the pef file format
 cp $SRC/binary-samples/oss-fuzz-binutils/fuzz_bfd_ext_seed_corpus.zip $OUT/fuzz_bfd_ext_seed_corpus.zip
 

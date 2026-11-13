@@ -22,7 +22,12 @@ mkdir -p $TOR_DEPS
 # Build libevent with proper instrumentation.
 cd ${SRC}/libevent
 mkdir build && cd build
-cmake -DEVENT__DISABLE_MBEDTLS=ON -DEVENT__DISABLE_OPENSSL=ON -DEVENT__LIBRARY_TYPE=STATIC ../
+cmake -DEVENT__DISABLE_MBEDTLS=ON \
+      -DEVENT__DISABLE_OPENSSL=ON \
+      -DEVENT__LIBRARY_TYPE=STATIC \
+      -DEVENT__DISABLE_TESTS=ON \
+      -DEVENT__DISABLE_SAMPLES=ON \
+      ../
 make && make install
 
 # Build OpenSSL with proper instrumentation.
@@ -34,8 +39,8 @@ then
 fi
 
 ./config no-shared --prefix=${TOR_DEPS} \
-    enable-tls1_3 enable-rc5 enable-md2 enable-ec_nistp_64_gcc_128 enable-ssl3 \
-    enable-ssl3-method enable-nextprotoneg enable-weak-ssl-ciphers $CFLAGS \
+    enable-tls1_3 enable-rc5 enable-md2 enable-ec_nistp_64_gcc_128 \
+    enable-weak-ssl-ciphers $CFLAGS \
     -fno-sanitize=alignment $OPENSSL_CONFIGURE_FLAGS
 
 make -j$(nproc) LDCMD="$CXX $CXXFLAGS"

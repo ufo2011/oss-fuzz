@@ -15,6 +15,15 @@
 ################################################################################
 
 FROM gcr.io/oss-fuzz-base/base-builder-go
+
+# The Go version is intentionally not pinned here. tailscale's go.mod (`go`
+# directive) is the single source of truth; GOTOOLCHAIN=auto fetches a matching
+# toolchain at build time if the base image's bundled Go is older, and
+# fuzz/oss-fuzz.sh copies it to a writable dir so go-118-fuzz-build_v2 can
+# overlay its testing/fuzz.go. Bumping Go = editing go.mod in the tailscale repo;
+# this Dockerfile stays untouched.
+
 RUN git clone --depth 1 https://github.com/tailscale/tailscale
+
 COPY build.sh $SRC/
 WORKDIR $SRC/tailscale
